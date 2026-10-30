@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-canary
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: model
+      track: canary
+  template:
+    metadata:
+      labels:
+        app: model          # 要和上面 selector 一致
+        track: canary
+    spec:
+      volumes:
+        - name: model-store
+          emptyDir: {}
+
+      initContainers:
+        - name: fetch-model
+          image: busybox:1.36
+          command: 
+            - wget
+            - -O
+            - /models/model.txt
+            - https://raw.githubusercontent.com/zhexizx/modelserve-operator/main/models/keywords-v2.txt
+          volumeMounts:
+            - name: model-store
+              mountPath: /models
+
+      containers:
+        - name: server
+          image: model-server:v1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          env:
+            - name: MODEL_PATH
+              value: /models/model.txt                          # 要和 wget 存的路径一致
+          volumeMounts:
+            - name: model-store
+              mountPath: /models
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
