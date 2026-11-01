@@ -1,0 +1,38 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: modeldeployments.serving.example.com
+spec:
+  group: serving.example.com
+  scope: Namespaced
+  names:
+    kind: ModelDeployment
+    singular: modeldeployment
+    plural: modeldeployments
+    shortNames:
+      - md
+  versions:
+    - name: v1alpha1
+      served: true        # API Server 提供这个版本
+      storage: true       # etcd 里用这个版本存储
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - image
+                - modelURI
+              properties:
+                image:
+                  type: string
+                modelURI:
+                  type: string
+                replicas:
+                  type: integer
+                  minimum: 1
+                canaryWeight:
+                  type: integer
+                  minimum: 0
+                  maximum: 100

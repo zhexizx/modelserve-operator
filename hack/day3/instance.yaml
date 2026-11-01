@@ -1,0 +1,9 @@
+apiVersion: serving.example.com/v1alpha1
+kind: ModelDeployment
+metadata:
+  name: moderation
+spec:
+  image: model-server:v1
+  modelURI:  https://raw.githubusercontent.com/zhexizx/modelserve-operator/main/models/keywords-v1.txt
+  replicas: 5
+  canaryWeight: 20
