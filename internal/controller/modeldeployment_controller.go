@@ -25,6 +25,8 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	servingv1alpha1 "github.com/zhexizx/modelserve-operator/api/v1alpha1"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 )
 
 // ModelDeploymentReconciler reconciles a ModelDeployment object
@@ -49,10 +51,15 @@ type ModelDeploymentReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.25.0/pkg/reconcile
 func (r *ModelDeploymentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
+	log := logf.FromContext(ctx)
 
-	// TODO(user): your logic here
-
+	var md servingv1alpha1.ModelDeployment
+	err := r.Get(ctx, req.NamespacedName, &md)
+	if err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+	stable, canary := splitReplicas(*md.Spec.Replicas, md.Spec.Canary)
+	log.Info("split replicas", "stable", stable, "canary", canary)
 	return ctrl.Result{}, nil
 }
 
@@ -61,5 +68,7 @@ func (r *ModelDeploymentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&servingv1alpha1.ModelDeployment{}).
 		Named("modeldeployment").
+		Owns(&appsv1.Deployment{}).
+		Owns(&corev1.Service{}).
 		Complete(r)
 }
