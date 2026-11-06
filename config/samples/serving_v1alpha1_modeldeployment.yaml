@@ -1,0 +1,16 @@
+apiVersion: serving.zhexi.dev/v1alpha1
+kind: ModelDeployment
+metadata:
+  labels:
+    app.kubernetes.io/name: modelserve-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: review-moderator
+spec:
+  # TODO(user): Add fields here
+  image: model-server:v1
+  modelURI: https://raw.githubusercontent.com/zhexizx/modelserve-operator/main/models/keywords-v1.txt
+  replicas: 5
+  canary:
+    image: model-server:v1
+    modelURI: https://raw.githubusercontent.com/zhexizx/modelserve-operator/main/models/keywords-v2.txt
+    weight: 20
