@@ -46,7 +46,7 @@ type ModelDeploymentSpec struct {
 	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
 
 	// +required
-	// +kubebuilder:valiation:MinLength=1
+	// +kubebuilder:validation:MinLength=1
 	Image string `json:"image"`
 	// +required
 	// +kubebuilder:validation:Pattern="^https?://"

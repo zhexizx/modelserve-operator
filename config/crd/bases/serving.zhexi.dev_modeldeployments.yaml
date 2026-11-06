@@ -234,6 +234,7 @@ spec:
                   type: object
                 type: array
               image:
+                minLength: 1
                 type: string
               modelURI:
                 pattern: ^https?://
