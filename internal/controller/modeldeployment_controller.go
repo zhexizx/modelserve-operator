@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -60,6 +61,32 @@ func (r *ModelDeploymentReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 	stable, canary := splitReplicas(*md.Spec.Replicas, md.Spec.Canary)
 	log.Info("split replicas", "stable", stable, "canary", canary)
+
+	if err := r.reconcileDeployment(ctx, &md, trackStable, stable, md.Spec.Image, md.Spec.ModelURI); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if md.Spec.Canary == nil {
+		obj := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      md.Name + "-" + trackCanary,
+				Namespace: md.Namespace,
+			},
+		}
+		// canary 本来就不存在（从没开过灰度，或者上次已经删了）是正常情况，不算错误
+		if err := client.IgnoreNotFound(r.Delete(ctx, obj)); err != nil {
+			return ctrl.Result{}, err
+		}
+	} else {
+		if err := r.reconcileDeployment(ctx, &md, trackCanary, canary, md.Spec.Canary.Image, md.Spec.Canary.ModelURI); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	if err := r.reconcileService(ctx, &md); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	return ctrl.Result{}, nil
 }
 
