@@ -40,10 +40,11 @@ func labelsFor(md *servingv1alpha1.ModelDeployment, track string) map[string]str
 func podTemplateFor(md *servingv1alpha1.ModelDeployment, track string, image string, modelURI string) corev1.PodTemplateSpec {
 	port := *md.Spec.Port
 
-	env := []corev1.EnvVar{
-		{Name: envModelPath, Value: modelFile},
-		{Name: envPort, Value: strconv.Itoa(int(port))},
-	}
+	env := make([]corev1.EnvVar, 0, 2+len(md.Spec.Env))
+	env = append(env,
+		corev1.EnvVar{Name: envModelPath, Value: modelFile},
+		corev1.EnvVar{Name: envPort, Value: strconv.Itoa(int(port))},
+	)
 	env = append(env, md.Spec.Env...)
 
 	modelMount := []corev1.VolumeMount{
@@ -94,4 +95,8 @@ func podTemplateFor(md *servingv1alpha1.ModelDeployment, track string, image str
 			},
 		},
 	}
+}
+
+func instanceLabels(md *servingv1alpha1.ModelDeployment) map[string]string {
+	return map[string]string{labelInstance: md.Name}
 }

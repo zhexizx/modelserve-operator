@@ -11,14 +11,16 @@ import (
 	servingv1alpha1 "github.com/zhexizx/modelserve-operator/api/v1alpha1"
 )
 
+const testName = "foo"
+
 func TestLabelsFor(t *testing.T) {
 	md := &servingv1alpha1.ModelDeployment{}
-	md.Name = "foo"
+	md.Name = testName
 
 	got := labelsFor(md, trackCanary)
 
-	if got[labelInstance] != "foo" {
-		t.Errorf("instance label = %q, want %q", got[labelInstance], "foo")
+	if got[labelInstance] != testName {
+		t.Errorf("instance label = %q, want %q", got[labelInstance], testName)
 	}
 	if got[labelTrack] != trackCanary {
 		t.Errorf("track label = %q, want %q", got[labelTrack], trackCanary)
@@ -35,7 +37,7 @@ func TestPodTemplateFor(t *testing.T) {
 	)
 
 	md := &servingv1alpha1.ModelDeployment{}
-	md.Name = "foo"
+	md.Name = testName
 	// 故意不用默认的 8080，确认端口真的是从 spec 里取的
 	md.Spec.Port = ptr.To[int32](9090)
 	md.Spec.Env = []corev1.EnvVar{{Name: "API_KEY", Value: "secret"}}
@@ -46,7 +48,7 @@ func TestPodTemplateFor(t *testing.T) {
 	got := podTemplateFor(md, trackCanary, image, modelURI)
 
 	// 标签
-	if got.Labels[labelInstance] != "foo" || got.Labels[labelTrack] != trackCanary {
+	if got.Labels[labelInstance] != testName || got.Labels[labelTrack] != trackCanary {
 		t.Errorf("labels = %v", got.Labels)
 	}
 

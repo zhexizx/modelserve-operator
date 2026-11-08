@@ -36,11 +36,7 @@ func loadKeywordModel(path string) (*keywordPredictor, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer func(f *os.File) {
-		err := f.Close()
-		if err != nil {
-		}
-	}(f)
+	defer func() { _ = f.Close() }() // 只读文件，Close 出错不影响已读到的内容，故意忽略
 
 	p := &keywordPredictor{version: "unknown"}
 	sc := bufio.NewScanner(f)
@@ -103,7 +99,10 @@ func predictHandler(p Predictor) http.HandlerFunc {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(res)
+		// 响应头已经发出，没法再改成 500，只能记一条日志（通常是客户端断开了）
+		if err := json.NewEncoder(w).Encode(res); err != nil {
+			slog.Warn("write response failed", "err", err)
+		}
 	}
 }
 
