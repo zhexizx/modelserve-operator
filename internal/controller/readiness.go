@@ -49,3 +49,12 @@ func setCond(md *servingv1alpha1.ModelDeployment, condType string, status metav1
 		ObservedGeneration: md.Generation,
 	})
 }
+
+func applyStatus(md *servingv1alpha1.ModelDeployment, obs observation, reconcileErr error) {
+	md.Status.ObservedGeneration = md.Generation
+	if reconcileErr == nil {
+		md.Status.StableReadyReplicas = obs.stableReady
+		md.Status.CanaryReadyReplicas = obs.canaryReady
+	}
+	setStatusConditions(md, obs, reconcileErr)
+}

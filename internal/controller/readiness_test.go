@@ -214,3 +214,59 @@ func TestSetStatusConditionsTransition(t *testing.T) {
 		t.Errorf("got %d conditions after several calls, want 3 (no duplicates)", len(md.Status.Conditions))
 	}
 }
+
+// applyStatus 把一次 reconcile 的结果写进 md.Status（只改内存）。
+// 关键规则：出错时 obs 只填了一部分、不可信，所以 ready 数保留上一次的值；
+// 但 observedGeneration 照样更新——这一版 spec 已经处理过了，结果（出错）写在 Degraded 里。
+func TestApplyStatus(t *testing.T) {
+	tests := []struct {
+		name        string
+		obs         observation
+		err         error
+		wantStable  int32
+		wantCanary  int32
+		wantDegrade wantCond
+	}{
+		{
+			name:        "success updates ready counts",
+			obs:         observation{stableReady: 2, canaryReady: 3, stableDone: true, canaryDone: true},
+			wantStable:  2,
+			wantCanary:  3,
+			wantDegrade: wantCond{metav1.ConditionFalse, servingv1alpha1.ReasonReconcileSuccess},
+		},
+		{
+			// 第 8 天 kind 上闪过的 0/0：reconcileChildren 提前返回，obs 是空的
+			name:        "error keeps previous ready counts",
+			obs:         observation{},
+			err:         errors.New("boom"),
+			wantStable:  4,
+			wantCanary:  1,
+			wantDegrade: wantCond{metav1.ConditionTrue, servingv1alpha1.ReasonReconcileError},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			md := &servingv1alpha1.ModelDeployment{}
+			md.Generation = 9
+			// 上一次 reconcile 留下的 status：处理到第 8 版，4/1 就绪
+			md.Status.ObservedGeneration = 8
+			md.Status.StableReadyReplicas = 4
+			md.Status.CanaryReadyReplicas = 1
+
+			applyStatus(md, tt.obs, tt.err)
+
+			if md.Status.ObservedGeneration != 9 {
+				t.Errorf("observedGeneration = %d, want 9", md.Status.ObservedGeneration)
+			}
+			if md.Generation != 9 {
+				t.Errorf("generation = %d, want 9 (applyStatus must not touch metadata)", md.Generation)
+			}
+			if md.Status.StableReadyReplicas != tt.wantStable || md.Status.CanaryReadyReplicas != tt.wantCanary {
+				t.Errorf("ready = %d/%d, want %d/%d",
+					md.Status.StableReadyReplicas, md.Status.CanaryReadyReplicas, tt.wantStable, tt.wantCanary)
+			}
+			checkCond(t, md, servingv1alpha1.ConditionDegraded, tt.wantDegrade)
+		})
+	}
+}

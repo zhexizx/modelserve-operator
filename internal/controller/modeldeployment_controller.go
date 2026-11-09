@@ -29,6 +29,7 @@ import (
 	servingv1alpha1 "github.com/zhexizx/modelserve-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 // ModelDeploymentReconciler reconciles a ModelDeployment object
@@ -61,15 +62,15 @@ func (r *ModelDeploymentReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// 1. 创建/更新子资源。出错了也不立刻 return：下面要把错误写进 status 的 Degraded
+	// 1. 创建/更新子资源。出错了也不立刻 return, 但是Conflict是例外
 	obs, reconcileErr := r.reconcileChildren(ctx, &md)
-	log.Info("reconciled children", "observation", obs, "error", reconcileErr)
+	if apierrors.IsConflict(reconcileErr) {
+		log.Info("conflict, will retry", "reconcileErr", reconcileErr)
+		return ctrl.Result{}, reconcileErr
+	}
 
 	// 2. 根据观察结果计算 status（只改内存里的 md.Status）
-	md.Status.ObservedGeneration = md.Generation
-	md.Status.StableReadyReplicas = obs.stableReady
-	md.Status.CanaryReadyReplicas = obs.canaryReady
-	setStatusConditions(&md, obs, reconcileErr)
+	applyStatus(&md, obs, reconcileErr)
 
 	// 3. 写回集群。两个 error 都保留：reconcileErr 不能被 statusErr 盖掉；都为 nil 时结果也是 nil
 	statusErr := r.Status().Update(ctx, &md)
