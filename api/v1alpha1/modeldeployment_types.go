@@ -89,7 +89,6 @@ type ModelDeploymentStatus struct {
 	// +listMapKey=type
 	// +optional
 	Conditions          []metav1.Condition `json:"conditions,omitempty"`
-	Weight              int64              `json:"weight,omitempty"`
 	ObservedGeneration  int64              `json:"observedGeneration,omitempty"`
 	StableReadyReplicas int32              `json:"stableReadyReplicas,omitempty"`
 	CanaryReadyReplicas int32              `json:"canaryReadyReplicas,omitempty"`
