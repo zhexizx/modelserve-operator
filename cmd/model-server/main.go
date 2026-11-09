@@ -42,8 +42,6 @@ func loadKeywordModel(path string) (*keywordPredictor, error) {
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
-		// TODO 1：按上面注释的规则处理每一行
-		// 提示：strings.HasPrefix、strings.TrimPrefix
 		if after, ok := strings.CutPrefix(line, "# version:"); ok {
 			p.version = strings.TrimSpace(after)
 			continue
@@ -63,8 +61,6 @@ func loadKeywordModel(path string) (*keywordPredictor, error) {
 }
 
 func (p *keywordPredictor) Predict(_ context.Context, text string) (Result, error) {
-	// TODO 2：命中任意关键词返回 reject / 1.0，否则返回 approve / 0.0
-	// 提示：strings.Contains；别忘了填 ModelVersion
 	for _, keyword := range p.keywords {
 		if strings.Contains(text, keyword) {
 			return Result{
@@ -86,8 +82,6 @@ func predictHandler(p Predictor) http.HandlerFunc {
 		var req struct {
 			Text string `json:"text"`
 		}
-		// TODO 3：用 json.NewDecoder(r.Body).Decode(&req) 解析请求体，
-		//         失败或 text 为空时用 http.Error 返回 400
 		err := json.NewDecoder(r.Body).Decode(&req)
 		if err != nil || req.Text == "" {
 			http.Error(w, "invalid JSON body", http.StatusBadRequest)
@@ -147,7 +141,6 @@ func main() {
 
 	<-ctx.Done()
 	slog.Info("shutting down")
-	// TODO 4：创建一个 10 秒超时的 context，调用 srv.Shutdown(它)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {

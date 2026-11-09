@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -55,17 +56,42 @@ func (r *ModelDeploymentReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	log := logf.FromContext(ctx)
 
 	var md servingv1alpha1.ModelDeployment
-	err := r.Get(ctx, req.NamespacedName, &md)
-	if err != nil {
+	if err := r.Get(ctx, req.NamespacedName, &md); err != nil {
+		// 拿不到对象就没法写 status，直接返回
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
+
+	// 1. 创建/更新子资源。出错了也不立刻 return：下面要把错误写进 status 的 Degraded
+	obs, reconcileErr := r.reconcileChildren(ctx, &md)
+	log.Info("reconciled children", "observation", obs, "error", reconcileErr)
+
+	// 2. 根据观察结果计算 status（只改内存里的 md.Status）
+	md.Status.ObservedGeneration = md.Generation
+	md.Status.StableReadyReplicas = obs.stableReady
+	md.Status.CanaryReadyReplicas = obs.canaryReady
+	setStatusConditions(&md, obs, reconcileErr)
+
+	// 3. 写回集群。两个 error 都保留：reconcileErr 不能被 statusErr 盖掉；都为 nil 时结果也是 nil
+	statusErr := r.Status().Update(ctx, &md)
+	return ctrl.Result{}, errors.Join(reconcileErr, statusErr)
+}
+
+// reconcileChildren 创建/更新 stable、canary 两个 Deployment 和 Service，
+// 返回观察到的就绪情况。遇到第一个错误就停下返回，此时 obs 可能只填了一部分。
+func (r *ModelDeploymentReconciler) reconcileChildren(ctx context.Context, md *servingv1alpha1.ModelDeployment) (observation, error) {
+	var obs observation
+
 	stable, canary := splitReplicas(*md.Spec.Replicas, md.Spec.Canary)
-	log.Info("split replicas", "stable", stable, "canary", canary)
 
-	if err := r.reconcileDeployment(ctx, &md, trackStable, stable, md.Spec.Image, md.Spec.ModelURI); err != nil {
-		return ctrl.Result{}, err
+	// stable
+	stableDep, err := r.reconcileDeployment(ctx, md, trackStable, stable, md.Spec.Image, md.Spec.ModelURI)
+	if err != nil {
+		return obs, err
 	}
+	obs.stableReady = stableDep.Status.AvailableReplicas
+	obs.stableDone = deploymentReady(stableDep, stable)
 
+	// canary
 	if md.Spec.Canary == nil {
 		obj := &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
@@ -75,19 +101,26 @@ func (r *ModelDeploymentReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 		// canary 本来就不存在（从没开过灰度，或者上次已经删了）是正常情况，不算错误
 		if err := client.IgnoreNotFound(r.Delete(ctx, obj)); err != nil {
-			return ctrl.Result{}, err
+			return obs, err
 		}
+		// 没有 canary = 不需要 canary Pod，也确实没有，算完成；否则整体永远不会 Ready
+		obs.canaryDone = true
+		obs.canaryReady = 0
 	} else {
-		if err := r.reconcileDeployment(ctx, &md, trackCanary, canary, md.Spec.Canary.Image, md.Spec.Canary.ModelURI); err != nil {
-			return ctrl.Result{}, err
+		canaryDep, err := r.reconcileDeployment(ctx, md, trackCanary, canary, md.Spec.Canary.Image, md.Spec.Canary.ModelURI)
+		if err != nil {
+			return obs, err
 		}
+		obs.canaryReady = canaryDep.Status.AvailableReplicas
+		obs.canaryDone = deploymentReady(canaryDep, canary)
 	}
 
-	if err := r.reconcileService(ctx, &md); err != nil {
-		return ctrl.Result{}, err
+	// Service
+	if err := r.reconcileService(ctx, md); err != nil {
+		return obs, err
 	}
 
-	return ctrl.Result{}, nil
+	return obs, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

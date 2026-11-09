@@ -11,13 +11,14 @@ import (
 	servingv1alpha1 "github.com/zhexizx/modelserve-operator/api/v1alpha1"
 )
 
+// reconcileDeployment 确保 <name>-<track> 存在且符合期望，返回集群里的最新对象（调用方用它的 Status 判断就绪情况）。
 func (r *ModelDeploymentReconciler) reconcileDeployment(
 	ctx context.Context,
 	md *servingv1alpha1.ModelDeployment,
 	track string,
 	replicas int32,
 	image, modelURI string,
-) error {
+) (*appsv1.Deployment, error) {
 	log := logf.FromContext(ctx)
 
 	dep := &appsv1.Deployment{
@@ -36,9 +37,10 @@ func (r *ModelDeploymentReconciler) reconcileDeployment(
 		return controllerutil.SetControllerReference(md, dep, r.Scheme)
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	log.Info("reconciled deployment", "name", dep.Name, "replicas", replicas, "operation", op)
-	return nil
+	// CreateOrUpdate 执行完后，dep 里是 API server 返回的最新对象，dep.Status 可以直接读
+	return dep, nil
 }
