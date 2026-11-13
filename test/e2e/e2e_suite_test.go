@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -34,6 +35,9 @@ import (
 var (
 	// managerImage is the manager image to be built and loaded for testing.
 	managerImage = "example.com/modelserve-operator:v0.0.1"
+	// modelServerImage must match the image in config/samples, which the e2e tests apply.
+	// Never use `latest`: its default imagePullPolicy is Always, so Kind would pull from Docker Hub.
+	modelServerImage = "model-server:v1"
 	// shouldCleanupCertManager tracks whether CertManager was installed by this suite.
 	shouldCleanupCertManager = false
 )
@@ -51,6 +55,8 @@ func TestE2E(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
+	verifyKubeContext()
+
 	By("building the manager image")
 	cmd := exec.Command("make", "docker-build", fmt.Sprintf("IMG=%s", managerImage))
 	_, err := utils.Run(cmd)
@@ -61,6 +67,15 @@ var _ = BeforeSuite(func() {
 	By("loading the manager image on Kind")
 	err = utils.LoadImageToKindClusterWithName(managerImage)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load the manager image into Kind")
+
+	By("building the model-server image")
+	cmd = exec.Command("make", "docker-build-model-server", fmt.Sprintf("MODEL_SERVER_IMG=%s", modelServerImage))
+	_, err = utils.Run(cmd)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build the model-server image")
+
+	By("loading the model-server image on Kind")
+	err = utils.LoadImageToKindClusterWithName(modelServerImage)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load the model-server image into Kind")
 
 	configureKubectlKubeRC()
 	setupCertManager()
@@ -83,6 +98,24 @@ func configureKubectlKubeRC() {
 	} else {
 		_, _ = fmt.Fprintf(GinkgoWriter, "kubectl kuberc enabled (KUBECTL_KUBERC=true)\n")
 	}
+}
+
+// verifyKubeContext fails fast unless kubectl points at the e2e Kind cluster.
+// Images are loaded by cluster name (KIND_CLUSTER), but kubectl/make deploy use the
+// current context. If they disagree (e.g. a leftover e2e cluster made `kind create`
+// skip, so the context was never switched), `make undeploy`/`make uninstall` in
+// AfterAll would delete the CRD — and every ModelDeployment — on the dev cluster.
+func verifyKubeContext() {
+	By("checking that kubectl points at the e2e Kind cluster")
+	kindCluster, ok := os.LookupEnv("KIND_CLUSTER")
+	Expect(ok).To(BeTrue(), "KIND_CLUSTER is not set; run the suite via `make test-e2e`")
+	cmd := exec.Command("kubectl", "config", "current-context")
+	output, err := utils.Run(cmd)
+	Expect(err).NotTo(HaveOccurred(), "Failed to read the current kubectl context")
+
+	wantContext := "kind-" + kindCluster
+	Expect(strings.TrimSpace(output)).To(Equal(wantContext),
+		"kubectl must point at the e2e cluster; run `kubectl config use-context %s`", wantContext)
 }
 
 // setupCertManager installs CertManager if needed for webhook tests.
